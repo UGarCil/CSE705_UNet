@@ -1,39 +1,67 @@
-# from constants import *
-from torch.utils.data.dataset import Dataset
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms 
+from torch.utils.data import Dataset
+from torchvision import transforms
+from torchvision.transforms import functional as TF
 from PIL import Image
-from os.path import join as jn
-import os
+import tifffile as tiff
 import numpy as np
-# DD
+import random
 
-
-# DD. UNETDATASET
-# unetDataset = UNetDataset()
-# interp. an object that contains a representation of the images and masks to enter the dataset
 class UNetDataset(Dataset):
-    def __init__(self,path_images,path_masks):
-        # self.root = path 
-        self.imagesPath = path_images
-        self.masksPath = path_masks
-        self.images = sorted([jn(self.imagesPath,i) for i in os.listdir(self.imagesPath)])
-        self.masks = sorted([jn(self.masksPath,i) for i in os.listdir(self.masksPath)])
-        # I've noticed the DataLoader class transforms the data into tensors, making the similar operation below optional (I think)
+    def __init__(self, volume_path, label_path, augment=False):
+        # Load full volume and label stacks (as numpy arrays)
+        self.volume = tiff.imread(volume_path)  # shape: (N, H, W)
+        self.labels = tiff.imread(label_path)   # shape: (N, H, W)
+        self.augment = augment
+
+        # Image transform: resize, make 3 channels, convert to tensor
         self.transform = transforms.Compose([
-            transforms.Resize((512,512)),
+            transforms.Resize((512, 512)),
+            transforms.Grayscale(num_output_channels=3),  # fake 3 channels
             transforms.ToTensor()
         ])
-    
-    def __getitem__(self,index):
-        img = Image.open(self.images[index]).convert("RGB")
-        mask = Image.open(self.masks[index]).convert("L")
-        
-        return self.transform(img), self.transform(mask)
+
+        # Label transform: resize with NEAREST for masks, convert to tensor
+        self.label_transform = transforms.Compose([
+            transforms.Resize((512, 512), interpolation=Image.NEAREST),
+            transforms.ToTensor()
+        ])
+
+    def augment_image_and_mask(self, img, mask):
+        if random.random() > 0.5:
+            img = TF.hflip(img)
+            mask = TF.hflip(mask)
+
+        if random.random() > 0.5:
+            img = TF.vflip(img)
+            mask = TF.vflip(mask)
+
+        angle = random.uniform(-30, 30)
+        img = TF.rotate(img, angle)
+        mask = TF.rotate(mask, angle)
+
+        return img, mask
+
+    def __getitem__(self, index):
+        # Load single slice
+        img = self.volume[index]   # shape: (H, W)
+        mask = self.labels[index]  # shape: (H, W)
+
+        # Convert to PIL
+        img = Image.fromarray(img).convert("L")  # grayscale
+        mask = Image.fromarray(mask).convert("L")  # grayscale
+
+        # Apply augmentations
+        if self.augment:
+            img, mask = self.augment_image_and_mask(img, mask)
+
+        # Apply transforms
+        img = self.transform(img)  # [3, 512, 512]
+        mask = self.label_transform(mask)  # [1, 512, 512]
+
+        # Convert mask to binary float for BCEWithLogitsLoss
+        mask = (mask > 0).float()  # values in [0.0, 1.0]
+
+        return img, mask
 
     def __len__(self):
-        return len(self.images)
-    
-        
-        
-
+        return self.volume.shape[0]

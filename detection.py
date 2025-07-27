@@ -1,19 +1,23 @@
+'''
+This script is used for inference and visualization of a UNet model trained on a dataset.
+It includes functions to visualize the model's predictions and generate confusion matrices.
+'''
+# 1. Standard library imports
+import random
+import os 
+from os.path import join as jn
+# 2. Related third party imports
 import torch
 import matplotlib.pyplot as plt
 from torchvision import transforms
 from PIL import Image
-import random
+import numpy as np
+import tifffile as tiff
+# 3. Local application/library specific imports
 from UNetDataset import UNetDataset
 from UNet import UNet
-import os 
-from os.path import join as jn
-import numpy as np
+from torch.nn import DataParallel
 
-
-
-
-PATH_MASKS = "../../20x_Green_PROCESSED/masks"
-PATH_IMAGES = "../../20x_Phase_PROCESSED/original"
 
 # predicted/Truth       TRUE    FALSE
 #       TRUE           truePOS  falsePOS
@@ -25,52 +29,17 @@ false_NEG = 0
 true_NEG = 0
 total = 0
 
-def pred_show_image_grid(images_path,masks_path, model_pth, device):
-    # Load the model with its previous parameters
-    model = UNet(in_channels=3, num_classes=1).to(device)
-    model.load_state_dict(torch.load(model_pth, map_location=torch.device(device)))
-    # Create a dataset for UNet
-    image_dataset = UNetDataset(images_path,masks_path)
-    images = []
-    orig_masks = []
-    pred_masks = []
-
-    counter = 0
-    for img, orig_mask in image_dataset:
-        img = img.float().to(device)
-        img = img.unsqueeze(0)
-
-        pred_mask = model(img)
-
-        img = img.squeeze(0).cpu().detach()
-        img = img.permute(1, 2, 0)
-
-        pred_mask = pred_mask.squeeze(0).cpu().detach()
-        pred_mask = pred_mask.permute(1, 2, 0)
-        pred_mask[pred_mask < 0]=0
-        pred_mask[pred_mask > 0]=1
-
-        orig_mask = orig_mask.cpu().detach()
-        orig_mask = orig_mask.permute(1, 2, 0)
-
-        images.append(img)
-        orig_masks.append(orig_mask)
-        pred_masks.append(pred_mask)
-
-        counter += 1
-        if counter > 3:
-            break
-
-    images.extend(orig_masks)
-    images.extend(pred_masks)
-    fig = plt.figure()
-    for i in range(1, 3*len(images)+1):
-       fig.add_subplot(3, len(images), i)
-       plt.imshow(images[i-1], cmap="gray")
-    plt.show()
 
 def generateConfusionMatrix(truth:np.array,pred:np.array):
-    # Assuming truth and predicted are your binary masks of shape (512,512,1)
+    '''
+    Generates a confusion matrix image from the truth and predicted masks.
+    Args:
+        truth (np.array): The ground truth binary mask.
+        pred (np.array): The predicted binary mask.
+    Returns:
+        np.array: An image representing the confusion matrix.
+    '''
+    #  binary masks of shape (512,512,1)
     # Convert them to boolean arrays
     truth_bool = truth.astype(bool)
     predicted_bool = pred.astype(bool)
@@ -112,97 +81,140 @@ def generateConfusionMatrix(truth:np.array,pred:np.array):
 
 
 
-def single_image_inference(image_pth, mask_pth, device, isPlot=True):
-    
-    transform = transforms.Compose([
-        transforms.Resize((512, 512)),
-        transforms.ToTensor()])
+def single_image_inference(img_tensor, mask_tensor, device, isPlot=True, model=None):
+    """
+    Args:
+        img_tensor (Tensor): Tensor of shape (3, H, W), already transformed
+        mask_tensor (Tensor): Tensor of shape (1, H, W) or (H, W), already transformed
+        device (str): "cuda" or "cpu"
+        isPlot (bool): Whether to show the plots
+        model (nn.Module): The model to use for inference
+    Returns:
+        dict: Dictionary of mask category counts
+    """
 
-    img = Image.open(image_pth).convert("RGB")
-    img = transform(img).float().to(device)
-    img = img.unsqueeze(0)
-    pred_mask = model(img)
+    if model is None:
+        raise ValueError("You must provide a model for inference.")
 
-    img = img.squeeze(0).cpu().detach()
-    img = img.permute(1, 2, 0)
-    # img_np = np.array(img)
+    img = img_tensor.float().to(device).unsqueeze(0)  # (1, 3, H, W)
 
-    pred_mask = pred_mask.squeeze(0).cpu().detach()
-    pred_mask = pred_mask.permute(1, 2, 0)
-    pred_mask[pred_mask < 0]=0
-    pred_mask[pred_mask > 0]=1
-    pred_mask_np = np.array(pred_mask)
-    
-    real_mask = Image.open(mask_pth).convert("L")
-    real_mask_np = np.array(real_mask)/255.
-    maskNpShape = real_mask_np.shape
-    real_mask_np = np.reshape(real_mask_np,(maskNpShape[1],maskNpShape[0],1))
-    confusion_matrix_image,mask_count = generateConfusionMatrix(truth=real_mask_np,pred=pred_mask_np)
-    
+    with torch.no_grad():
+        pred_mask = model(img)
+
+    # Prepare original image for display
+    img_disp = img.squeeze(0).cpu().permute(1, 2, 0)  # (H, W, 3)
+
+    # Prepare predicted mask
+    pred_mask = pred_mask.squeeze(0).cpu().permute(1, 2, 0)  # (H, W, 1)
+    pred_mask[pred_mask < 0] = 0
+    pred_mask[pred_mask > 0] = 1
+    pred_mask_np = pred_mask.numpy()
+
+    # Prepare ground truth mask
+    if mask_tensor.dim() == 3 and mask_tensor.shape[0] == 1:
+        real_mask_np = mask_tensor.squeeze(0).numpy()  # (H, W)
+    else:
+        real_mask_np = mask_tensor.numpy()  # (H, W)
+    real_mask_np = real_mask_np / real_mask_np.max()  # Normalize if needed
+    real_mask_np = np.reshape(real_mask_np, (real_mask_np.shape[0], real_mask_np.shape[1], 1))  # (H, W, 1)
+
+    # Generate confusion matrix
+    confusion_matrix_image, mask_count = generateConfusionMatrix(truth=real_mask_np, pred=pred_mask_np)
+
+    # Optional plot
     if isPlot:
-        fig = plt.figure()
-        for i in range(1, 5): 
-            ax = fig.add_subplot(1, 4, i)
+        fig = plt.figure(figsize=(12, 3))
+        titles = ["Original", "Predicted", "Truth", "Confusion Mask"]
+        images = [img_disp, pred_mask.squeeze(-1), real_mask_np.squeeze(-1), confusion_matrix_image]
+
+        for i in range(4):
+            ax = fig.add_subplot(1, 4, i + 1)
+            ax.imshow(images[i], cmap="gray" if i != 3 else None)
+            ax.set_title(titles[i])
             ax.axis("off")
-            if i == 1:
-                plt.imshow(img, cmap="gray")
-                ax.set_title("Original")
-            elif i==2:
-                plt.imshow(pred_mask, cmap="gray")
-                ax.set_title("Predicted")
-            elif i==3:
-                plt.imshow(real_mask, cmap="gray")
-                ax.set_title("Truth")
-            else:
-                plt.imshow(confusion_matrix_image)
-                ax.set_title("Confusion Mask")
+        plt.tight_layout()
         plt.show()
 
     return mask_count
 
+
+
+
+
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    MODEL_PATH = "./trained_models/Aug_21/UNET_model_123_200.pth"
-    IMAGES_PATH = r"C:\Users\Uriel\Desktop\fluorecence_Aug19_dataset\flourecence_20x\dataset\test\origs"
-    MASKS_PATH = r"C:\Users\Uriel\Desktop\fluorecence_Aug19_dataset\flourecence_20x\dataset\test\masks"
-    imagesinPATH = [jn(IMAGES_PATH,imgName) for imgName in os.listdir(IMAGES_PATH)]
-    # imagesinMASK = sorted([jn(MASKS_PATH,imgName) for imgName in os.listdir(MASKS_PATH)])
-    model = UNet(in_channels=3, num_classes=1).to(device)
-    # print(model.parameters)
-    model = torch.nn.DataParallel(model)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device(device)))
-    
-    for img_path in random.sample(imagesinPATH,10):
-        
-        # SINGLE_IMG_PATH = imagesinPATH[i]
-        SINGLE_IMG_MASK = img_path.replace("orig","mask")
 
-        counts = (single_image_inference(img_path, SINGLE_IMG_MASK, device))
-        counts = {k:round(v,3) for k,v in counts.items()}
-        # print(counts)
-        
-        
-    # calculate confusion matrix values
-    counter = 0
-    random.shuffle(imagesinPATH)
-    for img_path in imagesinPATH:
-        # get the name of the mask
-        SINGLE_IMG_MASK = img_path.replace("orig","mask")
-        # get the confusion masks, this time without plotting
-        counts = single_image_inference(img_path, SINGLE_IMG_MASK, device,isPlot=False)
-        
+    # Paths
+    MODEL_PATH = "../trained_models/July21_2025/UNET_model_epoch_50_of_250.pth"
+    MASKS_PATH = "../ISBI-2012-challenge/test-labels.tif"
+    IMAGES_PATH = "../ISBI-2012-challenge/test-volume.tif"
+
+    # Load full volumes
+    volume = tiff.imread(IMAGES_PATH)  # shape: (N, H, W)
+    labels = tiff.imread(MASKS_PATH)   # shape: (N, H, W)
+    assert volume.shape[0] == labels.shape[0], "Mismatched number of slices"
+
+    # Transformations (same as in your __init__)
+    image_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((512, 512)),
+        transforms.Grayscale(num_output_channels=3),
+        transforms.ToTensor()
+    ])
+    label_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((512, 512), interpolation=Image.NEAREST),
+        transforms.ToTensor()
+    ])
+
+    # Load model
+    # DD. MODEL
+    # model = UNet()
+    model = UNet(in_channels=3,num_classes=1).to(device)
+
+    # Use DataParallel to spread the model across multiple GPUs if available
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs")
+        model = DataParallel(model)
+
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+    model.eval()
+    
+
+    # Inference on 3 random slices and plot them
+    slice_indices = random.sample(range(volume.shape[0]), 3)
+    for idx in slice_indices:
+        img = image_transform(volume[idx])
+        mask = label_transform(labels[idx])
+
+        # counts = single_image_inference(img, mask, device)
+        counts = single_image_inference(img, mask, device, isPlot=True, model=model)
+
+        counts = {k: round(v, 3) for k, v in counts.items()}
+        print(f"Slice {idx}: {counts}")
+
+    # Full confusion matrix across all slices
+    true_POS = false_POS = false_NEG = true_NEG = total = 0
+    indices = list(range(volume.shape[0]))
+    random.shuffle(indices)
+
+    for counter, idx in enumerate(indices):
+        img = image_transform(volume[idx])
+        mask = label_transform(labels[idx])
+
+        counts = single_image_inference(img, mask, device, isPlot=False, model=model)
         true_POS += counts["white"]
         false_POS += counts["red"]
         false_NEG += counts["orange"]
         true_NEG += counts["black"]
         total += counts["total"]
-        counter += 1
-    # total = len(imagesinPATH)
-        final_counts = {"white":round(true_POS/total,4),
-                        "red":round(false_POS/total,4),
-                        "orange":round(false_NEG/total,4),
-                        "black":round(true_NEG/total,4),
-                        "TOTAL":round(total,4)}
-        if counter % 100:
-            print(final_counts)
-    
+
+        if counter % 100 == 0 or counter == len(indices) - 1:
+            final_counts = {
+                "white": round(true_POS / total, 4),
+                "red": round(false_POS / total, 4),
+                "orange": round(false_NEG / total, 4),
+                "black": round(true_NEG / total, 4),
+                "TOTAL": round(total, 4)
+            }
+            print(f"After {counter} slices:", final_counts)

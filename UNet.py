@@ -13,7 +13,9 @@
 
 
 ######################## MODULES ########################
-from constants import *
+import torch
+import torch.nn as nn
+
 
 ######################## DD #############################
 
