@@ -5,7 +5,7 @@ This project implements an image segmentation pipeline using the UNet architectu
 ## Project Overview
 
 <p align="center">
-    <img src="./Figures/modular_design.png" alt="Modular Design" width="50%">
+    <img src="./Figures_Plots/modular_design.png" alt="Modular Design" width="50%">
 </p>
 
 The project is divided into 7 modules, each responsible of addressing a specific aspect of the segmentation task:
