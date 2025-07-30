@@ -74,5 +74,4 @@ class Vgg19(nn.Module):
         x = self.classifier(x)
         
         
-        
-# CODE
+   

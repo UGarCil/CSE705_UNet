@@ -146,8 +146,8 @@ if __name__ == "__main__":
 
     # Paths
     MODEL_PATH = "../trained_models/July21_2025/UNET_model_epoch_50_of_250.pth"
-    MASKS_PATH = "../ISBI-2012-challenge/test-labels.tif"
-    IMAGES_PATH = "../ISBI-2012-challenge/test-volume.tif"
+    MASKS_PATH = "./ISBI-2012-challenge/test-labels.tif"
+    IMAGES_PATH = "./ISBI-2012-challenge/test-volume.tif"
 
     # Load full volumes
     volume = tiff.imread(IMAGES_PATH)  # shape: (N, H, W)

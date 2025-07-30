@@ -23,89 +23,30 @@ There are two recommended ways to set up this project:
 
 ### Option 1: Standard Python Virtual Environment
 
-#### Prerequisites
-- Python 3.6 or higher (Python 3.10 recommended)
-- pip
-
 #### Installation Steps
+
+## Requirements
+- Python 3.10 or higher (3.12 is recommended)
+- See `requirements.txt` for Python packages
+
 
 1. **Clone the repository**
     ```bash
-    git clone https://github.com/UGarCil/EyewearTerrains
-    cd EyewearTerrains
+    git clone https://github.com/UGarCil/CSE705_UNet.git
+    cd CSE705_UNet
     ```
+2. **Create virtual environment**
+    ```
+    # Create virtual environment
+    python -m venv venv_Unet
 
-2. **Create a virtual environment**
+    # Activate it (Windows)
+    venv_Unet\Scripts\activate.bat
 
-    - **Windows:**
-        ```bash
-        python -m venv unet-env
-        unet-env\Scripts\activate
-        ```
-    - **macOS/Linux:**
-        ```bash
-        python -m venv unet-env
-        source unet-env/bin/activate
-        ```
-
-3. **Install the package and dependencies**
+    # OR (Mac/Linux)
+    source venv_Unet/bin/activate
+    ```
+3. **Install dependencies**
     ```bash
-    pip install -e .
+    pip install -r requirements.txt
     ```
-
-4. **Verify installation**
-    ```bash
-    python -c "import unet_segmentation; print('UNet segmentation installed successfully!')"
-    ```
-
-5. **Deactivate the environment when finished**
-    ```bash
-    deactivate
-    ```
-
-### Option 2: Anaconda Environment
-
-#### Prerequisites
-- Anaconda or Miniconda installed
-
-#### Installation Steps
-
-1. **Clone the repository**
-    ```bash
-    git clone https://github.com/UGarCil/EyewearTerrains
-    cd EyewearTerrains
-    ```
-
-2. **Create a new conda environment with Python 3.10**
-    ```bash
-    conda create -n unet-env python=3.10
-    conda activate unet-env
-    ```
-
-3. **Install the package and dependencies**
-    ```bash
-    pip install -e .
-    ```
-    Alternatively, use the provided `environment.yml` file:
-    ```bash
-    conda env create -f environment.yml
-    conda activate unet-env
-    ```
-
-4. **Verify installation**
-    ```bash
-    python -c "import unet_segmentation; print('UNet segmentation installed successfully!')"
-    ```
-
-5. **Deactivate the environment when finished**
-    ```bash
-    conda deactivate
-    ```
-
-## Dependencies
-
-This project requires the following Python packages:
-- numpy
-- matplotlib
-- scikit-image
-- scipy
