@@ -17,12 +17,6 @@ The project is divided into 7 modules, each responsible of addressing a specific
 6. **Visualization Module**: Includes tools for visualizing model predictions and intermediate results.
 
 
-## Installation
-
-There are two recommended ways to set up this project:
-
-### Option 1: Standard Python Virtual Environment
-
 #### Installation Steps
 
 ## Requirements
